@@ -12,6 +12,7 @@ import (
 
 	wps "github.com/waku-org/go-waku/waku/v2/peerstore"
 	waku_proto "github.com/waku-org/go-waku/waku/v2/protocol"
+	"github.com/waku-org/go-waku/waku/v2/protocol/relay"
 	"github.com/waku-org/go-waku/waku/v2/utils"
 )
 
@@ -73,7 +74,7 @@ func (pm *PeerManager) SelectRandom(criteria PeerSelectionCriteria) (peer.IDSlic
 	if err != nil {
 		return nil, err
 	}
-	if len(filteredPeers) == 0 {
+	if len(filteredPeers) == 0 && criteria.Proto != relay.WakuRelayID_v200 {
 		return nil, utils.ErrNoPeersAvailable
 	}
 	if len(criteria.PubsubTopics) > 0 {
