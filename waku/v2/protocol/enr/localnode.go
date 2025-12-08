@@ -13,6 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/multiformats/go-multiaddr"
 	"go.uber.org/zap"
+
+	"github.com/waku-org/go-waku/waku/v2/node/utils"
+	"github.com/waku-org/go-waku/waku/v2/protocol"
 )
 
 func NewLocalnode(priv *ecdsa.PrivateKey) (*enode.LocalNode, error) {
@@ -116,6 +119,8 @@ func WithUDPPort(udpPort uint) ENROption {
 	}
 }
 
+// Update applies the given ENR options to the localnode.
+// This function should only be called from UpdateLocalNode, to ensure the order of options applied.
 func Update(logger *zap.Logger, localnode *enode.LocalNode, enrOptions ...ENROption) error {
 	for _, opt := range enrOptions {
 		err := opt(localnode)
@@ -150,4 +155,77 @@ func writeMultiaddressField(localnode *enode.LocalNode, addrAggr []multiaddr.Mul
 
 func DeleteField(localnode *enode.LocalNode, field string) {
 	localnode.Delete(enr.WithEntry(field, struct{}{}))
+}
+
+type LocalNodeParams struct {
+	Multiaddrs       []multiaddr.Multiaddr
+	IPAddr           *net.TCPAddr
+	UDPPort          uint
+	WakuFlags        WakuEnrBitfield
+	AdvertiseAddr    []multiaddr.Multiaddr
+	ShouldAutoUpdate bool
+	RelayShards      protocol.RelayShards
+}
+
+func UpdateLocalNode(logger *zap.Logger, localnode *enode.LocalNode, params *LocalNodeParams) error {
+	var options []ENROption
+	options = append(options, WithUDPPort(params.UDPPort))
+	options = append(options, WithWakuBitfield(params.WakuFlags))
+
+	// Reset ENR fields
+	DeleteField(localnode, MultiaddrENRField)
+	DeleteField(localnode, enr.TCP(0).ENRKey())
+	DeleteField(localnode, enr.IPv4{}.ENRKey())
+	DeleteField(localnode, enr.IPv6{}.ENRKey())
+	DeleteField(localnode, ShardingBitVectorEnrField)
+	DeleteField(localnode, ShardingIndicesListEnrField)
+
+	if params.AdvertiseAddr != nil {
+		// An advertised address disables libp2p address updates
+		// and discv5 predictions
+		ipAddr, err := utils.SelectMostExternalAddress(params.AdvertiseAddr)
+		if err != nil {
+			return err
+		}
+
+		options = append(options, WithIP(ipAddr))
+	} else if !params.ShouldAutoUpdate {
+		// We received a libp2p address update. Autoupdate is disabled
+		// Using a static ip will disable endpoint prediction.
+		options = append(options, WithIP(params.IPAddr))
+	} else {
+		if params.IPAddr.Port != 0 {
+			// We received a libp2p address update, but we should still
+			// allow discv5 to update the enr record. We set the localnode
+			// keys manually. It's possible that the ENR record might get
+			// updated automatically
+			ip4 := params.IPAddr.IP.To4()
+			ip6 := params.IPAddr.IP.To16()
+			if ip4 != nil && !ip4.IsUnspecified() {
+				localnode.SetFallbackIP(ip4)
+				localnode.Set(enr.IPv4(ip4))
+				localnode.Set(enr.TCP(uint16(params.IPAddr.Port)))
+			} else {
+				localnode.Delete(enr.IPv4{})
+				localnode.Delete(enr.TCP(0))
+				localnode.SetFallbackIP(net.IP{127, 0, 0, 1})
+			}
+
+			if ip4 == nil && ip6 != nil && !ip6.IsUnspecified() {
+				localnode.Set(enr.IPv6(ip6))
+				localnode.Set(enr.TCP6(params.IPAddr.Port))
+			} else {
+				localnode.Delete(enr.IPv6{})
+				localnode.Delete(enr.TCP6(0))
+			}
+		}
+	}
+
+	options = append(options, WithWakuRelaySharding(params.RelayShards))
+
+	// Writing the IP + Port has priority over writing the multiaddress which might fail or not
+	// depending on the enr having space
+	options = append(options, WithMultiaddress(params.Multiaddrs...))
+
+	return Update(logger, localnode, options...)
 }

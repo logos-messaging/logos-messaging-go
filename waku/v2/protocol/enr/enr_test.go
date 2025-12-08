@@ -1,15 +1,15 @@
 package enr
 
 import (
+	"fmt"
 	"net"
 	"testing"
 
 	gcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/enr"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
-	"github.com/waku-org/go-waku/waku/v2/utils"
+	"go.uber.org/zap"
 )
 
 func TestEnodeToMultiAddr(t *testing.T) {
@@ -22,75 +22,51 @@ func TestEnodeToMultiAddr(t *testing.T) {
 	require.Equal(t, expectedMultiAddr, actualMultiAddr.String())
 }
 
-// TODO: this function is duplicated in localnode.go. Remove duplication
-
-func updateLocalNode(localnode *enode.LocalNode, multiaddrs []ma.Multiaddr, ipAddr *net.TCPAddr, udpPort uint, wakuFlags WakuEnrBitfield, advertiseAddr *net.IP, shouldAutoUpdate bool) error {
-	var options []ENROption
-	options = append(options, WithUDPPort(udpPort))
-	options = append(options, WithWakuBitfield(wakuFlags))
-	options = append(options, WithMultiaddress(multiaddrs...))
-
-	if advertiseAddr != nil {
-		// An advertised address disables libp2p address updates
-		// and discv5 predictions
-		nip := &net.TCPAddr{
-			IP:   *advertiseAddr,
-			Port: ipAddr.Port,
-		}
-		options = append(options, WithIP(nip))
-	} else if !shouldAutoUpdate {
-		// We received a libp2p address update. Autoupdate is disabled
-		// Using a static ip will disable endpoint prediction.
-		options = append(options, WithIP(ipAddr))
-	} else {
-		// We received a libp2p address update, but we should still
-		// allow discv5 to update the enr record. We set the localnode
-		// keys manually. It's possible that the ENR record might get
-		// updated automatically
-		ip4 := ipAddr.IP.To4()
-		ip6 := ipAddr.IP.To16()
-		if ip4 != nil && !ip4.IsUnspecified() {
-			localnode.Set(enr.IPv4(ip4))
-			localnode.Set(enr.TCP(uint16(ipAddr.Port)))
-		} else {
-			localnode.Delete(enr.IPv4{})
-			localnode.Delete(enr.TCP(0))
-		}
-
-		if ip4 == nil && ip6 != nil && !ip6.IsUnspecified() {
-			localnode.Set(enr.IPv6(ip6))
-			localnode.Set(enr.TCP6(ipAddr.Port))
-		} else {
-			localnode.Delete(enr.IPv6{})
-			localnode.Delete(enr.TCP6(0))
-		}
-	}
-
-	return Update(utils.Logger(), localnode, options...)
-}
-
 func TestMultiaddr(t *testing.T) {
+	logger, err := zap.NewDevelopment()
+	require.NoError(t, err)
 
 	key, _ := gcrypto.GenerateKey()
 	wakuFlag := NewWakuEnrBitfield(true, true, true, true)
 
-	//wss, _ := ma.NewMultiaddr("/dns4/www.somedomainname.com/tcp/443/wss")
+	wss, _ := ma.NewMultiaddr("/dns4/www.somedomainname.com/tcp/443/wss")
 	circuit1, _ := ma.NewMultiaddr("/dns4/node-02.gc-us-central1-a.status.prod.status.im/tcp/30303/p2p/16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg/p2p-circuit")
 	circuit2, _ := ma.NewMultiaddr("/dns4/node-01.gc-us-central1-a.status.prod.status.im/tcp/30303/p2p/16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg/p2p-circuit")
+	circuit3, _ := ma.NewMultiaddr("/dns4/node-03.gc-us-central1-a.status.prod.status.im/tcp/30303/p2p/16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg/p2p-circuit")
+	circuit4, _ := ma.NewMultiaddr("/dns4/node-03.gc-us-central1-a.status.prod.status.im/tcp/30303/p2p/16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg/p2p-circuit")
+	circuit5, _ := ma.NewMultiaddr("/dns4/node-03.gc-us-central1-a.status.prod.status.im/tcp/30303/p2p/16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg/p2p-circuit")
+	circuit6, _ := ma.NewMultiaddr("/dns4/node-03.gc-us-central1-a.status.prod.status.im/tcp/30303/p2p/16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg/p2p-circuit")
 
 	multiaddrValues := []ma.Multiaddr{
-		//wss,
+		wss,
 		circuit1,
 		circuit2,
+		circuit3,
+		circuit4,
+		circuit5,
+		circuit6,
 	}
 
 	db, _ := enode.OpenDB("")
 	localNode := enode.NewLocalNode(db, key)
-	err := updateLocalNode(localNode, multiaddrValues, &net.TCPAddr{IP: net.IPv4(192, 168, 1, 241), Port: 60000}, 50000, wakuFlag, nil, false)
+	err = UpdateLocalNode(logger, localNode, &LocalNodeParams{
+		Multiaddrs:       multiaddrValues,
+		IPAddr:           &net.TCPAddr{IP: net.IPv4(192, 168, 1, 241), Port: 60000},
+		UDPPort:          50000,
+		WakuFlags:        wakuFlag,
+		AdvertiseAddr:    nil,
+		ShouldAutoUpdate: false,
+	})
 	require.NoError(t, err)
 
-	_ = localNode.Node() // Should not panic
+	require.NotPanics(t, func() {
+		_ = localNode.Node()
+	})
 
-	_, _, err = Multiaddress(localNode.Node())
+	peerID, maddrs, err := Multiaddress(localNode.Node())
 	require.NoError(t, err)
+
+	fmt.Println("peerID: ", peerID)
+	fmt.Println("len maddrs: ", len(maddrs))
+	fmt.Println("maddrs: ", maddrs)
 }

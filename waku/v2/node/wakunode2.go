@@ -106,10 +106,19 @@ type WakuNode struct {
 	store           *store.WakuStore
 	rlnRelay        RLNRelay
 
-	wakuFlag          enr.WakuEnrBitfield
 	circuitRelayNodes chan peer.AddrInfo
 
 	localNode *enode.LocalNode
+
+	// localNodeParams are ENR parameters that will be applied to the localnode.
+	localNodeParams enr.LocalNodeParams
+
+	// LocalNode.Set is a lazy operation that only stores the entry, but does not sign the record.
+	// But the size of the record is only checked during `sign`, and if it's >300 bytes, it will panic.
+	// In WithMultiaddress we attempt to write as much addresses as possible, relying on existing local node entries.
+	// On the other hand, enr.WithWakuRelaySharding is called in a goroutine, so ther is a race condition.
+	// To make it work properly, we should make sure that entries are not added during WithMultiaddress run.
+	localNodeMutex *sync.Mutex
 
 	bcaster relay.Broadcaster
 
@@ -193,10 +202,17 @@ func New(opts ...WakuNodeOption) (*WakuNode, error) {
 	w.opts = params
 	w.log = params.logger.Named("node2")
 	w.wg = &sync.WaitGroup{}
-	w.wakuFlag = enr.NewWakuEnrBitfield(w.opts.enableLightPush, w.opts.enableFilterFullNode, w.opts.enableStore, w.opts.enableRelay)
 	w.circuitRelayNodes = make(chan peer.AddrInfo)
 	w.metrics = newMetrics(params.prometheusReg)
 	w.metrics.RecordVersion(Version, GitCommit)
+
+	w.localNodeMutex = &sync.Mutex{}
+	w.localNodeParams = enr.LocalNodeParams{
+		WakuFlags:        enr.NewWakuEnrBitfield(w.opts.enableLightPush, w.opts.enableFilterFullNode, w.opts.enableStore, w.opts.enableRelay),
+		UDPPort:          w.opts.udpPort,
+		AdvertiseAddr:    w.opts.advertiseAddrs,
+		ShouldAutoUpdate: w.opts.discV5autoUpdate,
+	}
 
 	// Setup peerstore wrapper
 	if params.peerstore != nil {
