@@ -144,10 +144,6 @@ func TestPeerSelection(t *testing.T) {
 	_, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}})
 	require.NoError(t, err)
 
-	//Test for selectWithLowestRTT
-	_, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: LowestRTT, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}})
-	require.NoError(t, err)
-
 	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}, MaxPeers: 2})
 	require.Equal(t, 2, peerIDs.Len())
 	require.NoError(t, err)
@@ -166,6 +162,11 @@ func TestPeerSelection(t *testing.T) {
 	require.Equal(t, 3, peerIDs.Len())
 	require.NoError(t, err)
 
+	//Test for selectWithLowestRTT
+	// NOTE: This test must go the last because it involves pinging peers, which modifies the list of supported protocols
+	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: LowestRTT, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}, MaxPeers: 2})
+	require.NoError(t, err)
+	require.Len(t, peerIDs, 1) // With LowestRTT, only 1 peer is returned, even if MaxPeers is set
 }
 
 func TestDefaultProtocol(t *testing.T) {
