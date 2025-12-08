@@ -27,49 +27,60 @@ type ENROption func(*enode.LocalNode) error
 
 func WithMultiaddress(multiaddrs ...multiaddr.Multiaddr) ENROption {
 	return func(localnode *enode.LocalNode) (err error) {
+		if len(multiaddrs) == 0 {
+			return nil
+		}
+
 		// Randomly shuffle multiaddresses
 		rand.Shuffle(len(multiaddrs), func(i, j int) { multiaddrs[i], multiaddrs[j] = multiaddrs[j], multiaddrs[i] })
 
-		// Testing how many multiaddresses we can write before we exceed the limit
-		// By simulating what the localnode does when signing the enr, but without
-		// causing a panic
-
-		privk, err := crypto.GenerateKey()
-		if err != nil {
-			return err
+		// Find the maximum number of multiaddresses that fit in the ENR size limit
+		maxFittingCount := findMaxFittingMultiaddrs(localnode, multiaddrs)
+		if maxFittingCount == 0 {
+			return errors.New("no multiaddress fit into ENR")
 		}
 
-		// Adding extra multiaddresses. Should probably not exceed the enr max size of 300bytes
-		failedOnceWritingENR := false
-		couldWriteENRatLeastOnce := false
-		successIdx := -1
-		for i := len(multiaddrs); i > 0; i-- {
-			cpy := localnode.Node().Record() // Record() creates a copy for the current iteration
-			cpy.Set(enr.WithEntry(MultiaddrENRField, marshalMultiaddress(multiaddrs[0:i])))
-			cpy.SetSeq(localnode.Seq() + 1)
-			err = enode.SignV4(cpy, privk)
-			if err == nil {
-				couldWriteENRatLeastOnce = true
-				successIdx = i
-				break
-			}
-			failedOnceWritingENR = true
-		}
-
-		if failedOnceWritingENR && couldWriteENRatLeastOnce {
-			// Could write a subset of multiaddresses but not all
-			writeMultiaddressField(localnode, multiaddrs[0:successIdx])
-		}
-
+		writeMultiaddressField(localnode, multiaddrs[0:maxFittingCount])
 		return nil
 	}
 }
 
-func WithCapabilities(lightpush, filter, store, relay bool) ENROption {
-	return func(localnode *enode.LocalNode) (err error) {
-		wakuflags := NewWakuEnrBitfield(lightpush, filter, store, relay)
-		return WithWakuBitfield(wakuflags)(localnode)
+// findMaxFittingMultiaddrs determines how many multiaddresses can fit in the ENR
+func findMaxFittingMultiaddrs(localnode *enode.LocalNode, multiaddrs []multiaddr.Multiaddr) int {
+	privk, err := crypto.GenerateKey()
+	if err != nil {
+		return 0
 	}
+
+	// Get the current committed record (after the Node() call above)
+	currentRecord := localnode.Node().Record()
+
+	// Binary search for optimal count
+	maxFitting := 0
+
+	for i := len(multiaddrs); i > 0; i-- {
+		if canFitMultiaddrsOnRecord(currentRecord, multiaddrs[0:i], privk, localnode.Seq()) {
+			// Return as soon as we can fit most of the addresses
+			return i
+		}
+	}
+
+	return maxFitting
+}
+
+// canFitMultiaddrsOnRecord tests if multiaddresses can fit on a specific record.
+// ENR has a limit of 300 bytes. Later it will panic on signing, if the record is over the size limit.
+// By simulating what the localnode does when signing the enr, but without causing a panic.
+func canFitMultiaddrsOnRecord(baseRecord *enr.Record, addrs []multiaddr.Multiaddr, privk *ecdsa.PrivateKey, seq uint64) bool {
+	// Create a copy of the base record
+	testRecord := *baseRecord
+
+	// Add the multiaddress field
+	testRecord.Set(enr.WithEntry(MultiaddrENRField, marshalMultiaddress(addrs)))
+	testRecord.SetSeq(seq + 1)
+
+	// Try to sign - this will return an error if the record is too large
+	return enode.SignV4(&testRecord, privk) == nil
 }
 
 func WithWakuBitfield(flags WakuEnrBitfield) ENROption {
