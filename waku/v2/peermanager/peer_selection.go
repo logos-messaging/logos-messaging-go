@@ -80,8 +80,9 @@ func (pm *PeerManager) SelectRandom(criteria PeerSelectionCriteria) (peer.IDSlic
 	if len(criteria.PubsubTopics) > 0 {
 		filteredPeers = pm.host.Peerstore().(wps.WakuPeerstore).PeersByPubSubTopics(criteria.PubsubTopics, filteredPeers...)
 	}
+
 	//Not passing excludePeers as filterPeers are already considering excluded ones.
-	randomPeers, err := selectRandomPeers(filteredPeers, nil, criteria.MaxPeers-len(peerIDs))
+	randomPeers, err := selectRandomPeers(filteredPeers, nil, min(criteria.MaxPeers, len(peerIDs)))
 	if err != nil && len(peerIDs) == 0 {
 		return nil, err
 	}
