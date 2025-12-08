@@ -8,8 +8,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
-	"github.com/waku-org/go-waku/waku/v2/protocol"
 	"golang.org/x/exp/maps"
+
+	"github.com/waku-org/go-waku/waku/v2/protocol"
 )
 
 // Origin is used to determine how the peer is identified,
@@ -233,17 +234,20 @@ func (ps *WakuPeerstoreImpl) PeersByPubSubTopics(pubSubTopics []string, specific
 	for _, p := range specificPeers {
 		peerMatch := true
 		peerTopics, err := ps.PubSubTopics(p)
-		if err == nil {
-			for _, t := range pubSubTopics {
-				if _, ok := peerTopics[t]; !ok {
-					peerMatch = false
-					break
-				}
+		if err != nil {
+			//Note: skipping a peer in case of an error as there would be others available.
+			continue
+		}
+
+		for _, t := range pubSubTopics {
+			if _, ok := peerTopics[t]; !ok {
+				peerMatch = false
+				break
 			}
-			if peerMatch {
-				result = append(result, p)
-			}
-		} //Note: skipping a peer in case of an error as there would be others available.
+		}
+		if peerMatch {
+			result = append(result, p)
+		}
 	}
 	return result
 }

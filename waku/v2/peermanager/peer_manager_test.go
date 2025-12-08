@@ -15,6 +15,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
 	"github.com/waku-org/go-waku/tests"
 	"github.com/waku-org/go-waku/waku/v2/discv5"
 	"github.com/waku-org/go-waku/waku/v2/onlinechecker"
@@ -125,32 +126,38 @@ func TestPeerSelection(t *testing.T) {
 	defer h3.Close()
 
 	protocol := libp2pProtocol.ID("test/protocol")
-	_, err = pm.AddPeer([]multiaddr.Multiaddr{tests.GetAddr(h2)}, wps.Static, []string{"/waku/2/rs/2/1", "/waku/2/rs/2/2"}, libp2pProtocol.ID(protocol))
+	_, err = pm.AddPeer([]multiaddr.Multiaddr{tests.GetAddr(h2)}, wps.Static, []string{"/waku/2/rs/2/1", "/waku/2/rs/2/2"}, protocol)
 	require.NoError(t, err)
 
-	_, err = pm.AddPeer([]multiaddr.Multiaddr{tests.GetAddr(h3)}, wps.Static, []string{"/waku/2/rs/2/1"}, libp2pProtocol.ID(protocol))
+	_, err = pm.AddPeer([]multiaddr.Multiaddr{tests.GetAddr(h3)}, wps.Static, []string{"/waku/2/rs/2/1"}, protocol)
 	require.NoError(t, err)
 
-	_, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol})
-	require.NoError(t, err)
+	var peerIDs peer.IDSlice
 
-	peerIDs, err := pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/2"}})
+	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol})
 	require.NoError(t, err)
-	require.Equal(t, h2.ID(), peerIDs[0])
+	require.Len(t, peerIDs, 1) // Only 1 peer is returned randomly, because MaxPeers defaults to 1 when not set
 
-	_, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/3"}})
-	require.Error(t, utils.ErrNoPeersAvailable, err)
-
-	_, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}})
+	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/2"}})
 	require.NoError(t, err)
+	require.Len(t, peerIDs, 1)
+	require.Equal(t, h2.ID(), peerIDs[0]) // Only h2 has this pubsub topic
+
+	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/3"}})
+	require.Error(t, utils.ErrNoPeersAvailable, err) // No peer has this pubsub topic
+	require.Empty(t, peerIDs)
+
+	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}})
+	require.NoError(t, err)
+	require.Len(t, peerIDs, 1) // Both h2 and h3 have this pubsub topic, but only 1 peer is returned randomly because MaxPeers defaults to 1 when not set
 
 	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}, MaxPeers: 2})
-	require.Equal(t, 2, peerIDs.Len())
 	require.NoError(t, err)
+	require.Len(t, peerIDs, 2)
 
 	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}, MaxPeers: 3})
-	require.Equal(t, 2, peerIDs.Len())
 	require.NoError(t, err)
+	require.Len(t, peerIDs, 2)
 
 	h4, err := tests.MakeHost(ctx, 0, rand.Reader)
 	require.NoError(t, err)
@@ -159,7 +166,7 @@ func TestPeerSelection(t *testing.T) {
 	require.NoError(t, err)
 
 	peerIDs, err = pm.SelectPeers(PeerSelectionCriteria{SelectionType: Automatic, Proto: protocol, PubsubTopics: []string{"/waku/2/rs/2/1"}, MaxPeers: 3})
-	require.Equal(t, 3, peerIDs.Len())
+	require.Len(t, peerIDs, 3)
 	require.NoError(t, err)
 
 	//Test for selectWithLowestRTT
