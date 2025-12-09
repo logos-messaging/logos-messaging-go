@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	backoffv4 "github.com/cenkalti/backoff/v4"
@@ -122,6 +123,8 @@ type WakuNode struct {
 	storeFactory storeFactory
 
 	peermanager *peermanager.PeerManager
+
+	watchingRelayShards atomic.Bool
 }
 
 func defaultStoreFactory(w *WakuNode) legacy_store.Store {

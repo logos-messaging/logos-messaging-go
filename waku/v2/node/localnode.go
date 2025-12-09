@@ -348,6 +348,10 @@ func (w *WakuNode) SetRelayShards(rs protocol.RelayShards) error {
 }
 
 func (w *WakuNode) watchTopicShards(ctx context.Context) error {
+	if !w.watchingRelayShards.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	evtRelaySubscribed, err := w.Relay().Events().Subscribe(new(relay.EvtRelaySubscribed))
 	if err != nil {
 		return err
@@ -358,10 +362,13 @@ func (w *WakuNode) watchTopicShards(ctx context.Context) error {
 		return err
 	}
 
+	w.wg.Add(1)
+
 	go func() {
 		defer utils.LogOnPanic()
 		defer evtRelaySubscribed.Close()
 		defer evtRelayUnsubscribed.Close()
+		defer w.wg.Done()
 
 		for {
 			select {
