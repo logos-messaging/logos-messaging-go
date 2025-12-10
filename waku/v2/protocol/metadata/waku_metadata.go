@@ -125,7 +125,7 @@ func (wakuM *WakuMetadata) Request(ctx context.Context, peerID peer.ID) (*pb.Wak
 
 	writer := pbio.NewDelimitedWriter(stream)
 	reader := pbio.NewDelimitedReader(stream, math.MaxInt32)
-	logger.Debug("sending metadata request")
+	logger.Info("sending metadata request", zap.Uint32("clusterId", *clusterID), zap.Uint32s("shards", shards))
 
 	err = writer.WriteMsg(request)
 	if err != nil {
@@ -148,7 +148,7 @@ func (wakuM *WakuMetadata) Request(ctx context.Context, peerID peer.ID) (*pb.Wak
 	}
 
 	stream.Close()
-	logger.Debug("received metadata response")
+	logger.Info("received metadata response", zap.Uint32("clusterId", *response.ClusterId), zap.Uint32s("shards", request.Shards))
 	return response, nil
 }
 
@@ -186,7 +186,7 @@ func (wakuM *WakuMetadata) onRequest(ctx context.Context) func(network.Stream) {
 			}
 			return
 		}
-		logger.Debug("sent metadata response to peer")
+		logger.Info("sent metadata response to peer", zap.Uint32("clusterId", *clusterID), zap.Uint32s("shards", shards))
 
 		stream.Close()
 	}
