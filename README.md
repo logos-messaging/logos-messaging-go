@@ -22,7 +22,7 @@ make
 ./build/waku --help
 ```
 #### Nix
-You can build Waku v2 node using [Nix](https://nixos.org/) [Flakes](https://nixos.wiki/wiki/Flakes):
+You can build Waku v2 node using [Nix](https://nixos.org/) [Flakes](https://wiki.nixos.org/wiki/Flakes):
 ```sh
 nix build github:waku-org/go-waku
 ```
