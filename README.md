@@ -93,7 +93,7 @@ make mobile-ios
 ## Examples
 Examples of usage of go-waku as a library can be found in the `examples/` folder:
 
-- [**basic2**](examples/basic2) - demonstrates how to send and receive messages
+- [**basic_relay**](examples/basic-relay) - demonstrates how to send and receive messages
 - [**chat2**](examples/chat2) - simple chat client using waku relay / lightpush + filter / store protocol to send/receive messages and retrieve message history
 - [**filter2**](examples/filter2) - demonstrates how to use filter protocol
 - [**c-bindings**](examples/c-bindings) - simple program to demonstrate how to consume the go-waku library via C FFI
